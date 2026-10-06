@@ -1,0 +1,95 @@
+{% extends "base.html" %}
+
+{% block title %}Sign In{% endblock %}
+
+{% block body %}
+<div class="auth-wrapper">
+    <div class="auth-left">
+        <div class="auth-branding">
+            <div class="auth-logo">
+                <i class="bi bi-radar"></i>
+                <span>DataScraper Pro</span>
+            </div>
+            <h2>Welcome Back.</h2>
+            <p>Continue your data journey. Your scraped datasets and analysis results are waiting.</p>
+            <div class="auth-features">
+                <div class="feature-item"><i class="bi bi-clock-history"></i><span>Access Past Scrape Sessions</span></div>
+                <div class="feature-item"><i class="bi bi-bar-chart-fill"></i><span>Interactive Visualizations</span></div>
+                <div class="feature-item"><i class="bi bi-file-earmark-spreadsheet"></i><span>Data Export Ready</span></div>
+            </div>
+        </div>
+        <div class="auth-particles"></div>
+    </div>
+
+    <div class="auth-right">
+        <div class="auth-card">
+            <div class="auth-card-header">
+                <h3>Sign In</h3>
+                <p>Welcome back to DataScraper Pro</p>
+            </div>
+
+            {% with messages = get_flashed_messages(with_categories=true) %}
+                {% if messages %}
+                    {% for category, message in messages %}
+                    <div class="alert alert-{{ category }} mb-3">
+                        <i class="bi bi-{% if category == 'success' %}check-circle{% elif category == 'danger' %}exclamation-circle{% else %}info-circle{% endif %}-fill me-2"></i>
+                        {{ message }}
+                    </div>
+                    {% endfor %}
+                {% endif %}
+            {% endwith %}
+
+            <form method="POST" action="{{ url_for('auth.login') }}" novalidate id="loginForm">
+                {{ form.hidden_tag() }}
+
+                <div class="form-floating mb-3">
+                    {{ form.email(class="form-control" + (" is-invalid" if form.email.errors else ""), placeholder="Email", id="email", autocomplete="email") }}
+                    {{ form.email.label }}
+                    {% for error in form.email.errors %}
+                        <div class="invalid-feedback">{{ error }}</div>
+                    {% endfor %}
+                </div>
+
+                <div class="form-floating mb-4 position-relative">
+                    {{ form.password(class="form-control" + (" is-invalid" if form.password.errors else ""), placeholder="Password", id="password", autocomplete="current-password") }}
+                    {{ form.password.label }}
+                    <button type="button" class="password-toggle" onclick="togglePassword('password')">
+                        <i class="bi bi-eye" id="password-eye"></i>
+                    </button>
+                    {% for error in form.password.errors %}
+                        <div class="invalid-feedback">{{ error }}</div>
+                    {% endfor %}
+                </div>
+
+                <button type="submit" class="btn btn-primary w-100 btn-auth" id="submitBtn">
+                    <span class="btn-text"><i class="bi bi-box-arrow-in-right me-2"></i>Sign In</span>
+                    <span class="btn-spinner d-none"><span class="spinner-border spinner-border-sm me-2"></span>Signing in...</span>
+                </button>
+            </form>
+
+            <p class="auth-footer">
+                Don't have an account? <a href="{{ url_for('auth.register') }}">Create one for free</a>
+            </p>
+        </div>
+    </div>
+</div>
+
+<script>
+function togglePassword(id) {
+    const input = document.getElementById(id);
+    const icon = document.getElementById(id + '-eye');
+    if (input.type === 'password') {
+        input.type = 'text';
+        icon.className = 'bi bi-eye-slash';
+    } else {
+        input.type = 'password';
+        icon.className = 'bi bi-eye';
+    }
+}
+
+document.getElementById('loginForm').addEventListener('submit', function() {
+    document.querySelector('.btn-text').classList.add('d-none');
+    document.querySelector('.btn-spinner').classList.remove('d-none');
+});
+</script>
+{% endblock %}

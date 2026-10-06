@@ -1,0 +1,343 @@
+{% extends "layout.html" %}
+
+{% block title %}Results - {{ session.title }}{% endblock %}
+{% block page_title %}Analysis Results{% endblock %}
+
+{% block content %}
+<div class="step-bar">
+    <div class="step done"><div class="step-dot"><i class="bi bi-check"></i></div><span>Fetch Page</span></div>
+    <div class="step-line done"></div>
+    <div class="step done"><div class="step-dot"><i class="bi bi-check"></i></div><span>Select Elements</span></div>
+    <div class="step-line done"></div>
+    <div class="step active"><div class="step-dot"><i class="bi bi-check"></i></div><span>Analyze Data</span></div>
+</div>
+
+<!-- Loading overlay -->
+<div id="loadingOverlay" class="results-loading">
+    <div class="loading-content">
+        <div class="spinner-grow text-primary" style="width:3.5rem;height:3.5rem;"></div>
+        <h5 class="mt-3">Loading Results...</h5>
+    </div>
+</div>
+
+<!-- Results content (hidden until loaded) -->
+<div id="resultsContent" style="display:none;">
+
+    <!-- Session Info Bar -->
+    <div class="result-info-bar" id="resultInfoBar">
+        <div class="result-url"><i class="bi bi-globe2 me-2"></i><span id="resultUrl"></span></div>
+        <div class="result-actions">
+            <a href="#" class="btn btn-sm btn-success" id="downloadCsv"><i class="bi bi-filetype-csv me-1"></i>CSV</a>
+            <a href="#" class="btn btn-sm btn-success" id="downloadExcel"><i class="bi bi-file-earmark-excel me-1"></i>Excel</a>
+            <a href="{{ url_for('scraper.new_scrape') }}" class="btn btn-sm btn-primary"><i class="bi bi-plus-lg me-1"></i>New Scrape</a>
+        </div>
+    </div>
+
+    <!-- Summary Stats -->
+    <div class="stats-grid" id="summaryStats"></div>
+
+    <!-- Charts Section -->
+    <div class="section-card">
+        <div class="section-card-header">
+            <h4><i class="bi bi-bar-chart-fill me-2"></i>Data Visualizations</h4>
+        </div>
+        <div class="section-card-body">
+            <div class="charts-grid" id="chartsGrid">
+                <div class="chart-placeholder">No chart data available.</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Column Statistics -->
+    <div class="section-card">
+        <div class="section-card-header">
+            <h4><i class="bi bi-calculator me-2"></i>Column Statistics</h4>
+        </div>
+        <div class="section-card-body">
+            <div class="col-stats-grid" id="colStatsGrid"></div>
+        </div>
+    </div>
+
+    <!-- Data Table -->
+    <div class="section-card">
+        <div class="section-card-header">
+            <h4><i class="bi bi-table me-2"></i>Extracted Data</h4>
+            <div class="d-flex gap-2 align-items-center">
+                <input type="text" class="form-control form-control-sm" id="tableSearch"
+                       placeholder="Search data..." style="width:200px;">
+                <span class="text-muted small" id="tableCount"></span>
+            </div>
+        </div>
+        <div class="section-card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover data-table" id="dataTable">
+                    <thead id="tableHead"></thead>
+                    <tbody id="tableBody"></tbody>
+                </table>
+            </div>
+            <div class="table-pagination" id="tablePagination"></div>
+        </div>
+    </div>
+
+</div>
+
+<div id="errorState" class="alert alert-danger d-none">
+    <i class="bi bi-exclamation-circle-fill me-2"></i>
+    <span id="errorStateMsg"></span>
+</div>
+
+<script>
+const SESSION_ID = {{ session.id }};
+let allData = [];
+let currentPage = 1;
+const PAGE_SIZE = 25;
+let filteredData = [];
+
+window.addEventListener('DOMContentLoaded', loadResults);
+
+function loadResults() {
+    // Try sessionStorage first for immediate display
+    const cached = sessionStorage.getItem('scrapeResults');
+    if (cached) {
+        try {
+            const data = JSON.parse(cached);
+            if (data.session_id == SESSION_ID) {
+                renderResults(data);
+                sessionStorage.removeItem('scrapeResults');
+                return;
+            }
+        } catch(e) {}
+    }
+
+    // Fetch from API
+    fetch(`/api/results/${SESSION_ID}`)
+    .then(r => r.json())
+    .then(data => {
+        if (data.success) {
+            renderResults(data);
+        } else {
+            showError(data.error || 'Failed to load results.');
+        }
+    })
+    .catch(() => showError('Network error loading results.'));
+}
+
+function renderResults(data) {
+    document.getElementById('loadingOverlay').style.display = 'none';
+    document.getElementById('resultsContent').style.display = '';
+
+    // Info bar
+    document.getElementById('resultUrl').textContent = data.url || '{{ session.url }}';
+    document.getElementById('downloadCsv').href = `/api/download/${SESSION_ID}/csv`;
+    document.getElementById('downloadExcel').href = `/api/download/${SESSION_ID}/excel`;
+
+    // Stats
+    const stats = data.stats || {};
+    const recordCount = data.record_count || (data.data || []).length;
+    document.getElementById('summaryStats').innerHTML = `
+        <div class="stat-card"><div class="stat-icon" style="--color:#6366f1;"><i class="bi bi-database-fill"></i></div>
+            <div class="stat-content"><h3>${recordCount}</h3><p>Total Records</p></div></div>
+        <div class="stat-card"><div class="stat-icon" style="--color:#22c55e;"><i class="bi bi-layout-three-columns"></i></div>
+            <div class="stat-content"><h3>${stats.total_columns || 0}</h3><p>Columns</p></div></div>
+        <div class="stat-card"><div class="stat-icon" style="--color:#f59e0b;"><i class="bi bi-percent"></i></div>
+            <div class="stat-content"><h3>${stats.completeness_pct || 0}%</h3><p>Data Completeness</p></div></div>
+        <div class="stat-card"><div class="stat-icon" style="--color:#ec4899;"><i class="bi bi-hash"></i></div>
+            <div class="stat-content"><h3>${(stats.numeric_columns || []).length}</h3><p>Numeric Columns</p></div></div>
+    `;
+
+    // Charts
+    renderCharts(data.charts || {});
+
+    // Column stats cards
+    renderColStats(stats);
+
+    // Table
+    allData = data.data || data.preview || [];
+    filteredData = [...allData];
+    renderTable();
+
+    // Search
+    document.getElementById('tableSearch').addEventListener('input', function() {
+        const q = this.value.toLowerCase();
+        filteredData = allData.filter(row =>
+            Object.values(row).some(v => String(v).toLowerCase().includes(q))
+        );
+        currentPage = 1;
+        renderTable();
+    });
+}
+
+function renderCharts(charts) {
+    const grid = document.getElementById('chartsGrid');
+    const chartKeys = Object.keys(charts);
+    if (chartKeys.length === 0) {
+        grid.innerHTML = '<p class="text-muted p-3">No visualizations available for this data.</p>';
+        return;
+    }
+
+    grid.innerHTML = chartKeys.map(key => `<div class="chart-box" id="chart-${key}"></div>`).join('');
+
+    chartKeys.forEach(key => {
+        const c = charts[key];
+        const el = document.getElementById(`chart-${key}`);
+        if (!el) return;
+
+        const layout = {
+            title: { text: c.title, font: { family: 'Inter', size: 14, color: '#e2e8f0' } },
+            paper_bgcolor: 'transparent', plot_bgcolor: 'transparent',
+            font: { family: 'Inter', color: '#94a3b8' },
+            margin: { l: 50, r: 20, t: 50, b: 60 },
+            xaxis: { gridcolor: '#1e293b', color: '#94a3b8', tickfont: { size: 11 } },
+            yaxis: { gridcolor: '#1e293b', color: '#94a3b8', tickfont: { size: 11 } },
+            showlegend: false,
+        };
+
+        const colors = ['#6366f1', '#22c55e', '#f59e0b', '#ec4899', '#06b6d4', '#8b5cf6'];
+
+        if (c.type === 'bar') {
+            Plotly.newPlot(el, [{
+                type: 'bar', x: c.labels, y: c.values,
+                marker: { color: colors, opacity: 0.85, line: { width: 0 } },
+                text: c.values, textposition: 'outside',
+            }], layout, { responsive: true, displayModeBar: false });
+
+        } else if (c.type === 'pie') {
+            Plotly.newPlot(el, [{
+                type: 'pie', labels: c.labels, values: c.values,
+                hole: 0.4,
+                marker: { colors: colors },
+                textfont: { color: '#e2e8f0' },
+            }], { ...layout, xaxis: undefined, yaxis: undefined }, { responsive: true, displayModeBar: false });
+
+        } else if (c.type === 'histogram') {
+            Plotly.newPlot(el, [{
+                type: 'bar', x: c.labels, y: c.values,
+                marker: { color: '#6366f1', opacity: 0.8 },
+            }], layout, { responsive: true, displayModeBar: false });
+
+        } else if (c.type === 'line') {
+            Plotly.newPlot(el, [{
+                type: 'scatter', mode: 'lines+markers',
+                x: c.labels, y: c.values,
+                line: { color: '#6366f1', width: 2, shape: 'spline' },
+                marker: { color: '#818cf8', size: 4 },
+                fill: 'tozeroy', fillcolor: 'rgba(99,102,241,0.1)',
+            }], layout, { responsive: true, displayModeBar: false });
+
+        } else if (c.type === 'scatter') {
+            Plotly.newPlot(el, [{
+                type: 'scatter', mode: 'markers',
+                x: c.x, y: c.y,
+                marker: { color: '#22c55e', size: 6, opacity: 0.7 },
+            }], { ...layout,
+                xaxis: { ...layout.xaxis, title: c.x_label },
+                yaxis: { ...layout.yaxis, title: c.y_label }
+            }, { responsive: true, displayModeBar: false });
+        }
+    });
+}
+
+function renderColStats(stats) {
+    const grid = document.getElementById('colStatsGrid');
+    const colStats = stats.column_stats || {};
+    if (Object.keys(colStats).length === 0) {
+        grid.innerHTML = '<p class="text-muted">No statistics available.</p>';
+        return;
+    }
+
+    grid.innerHTML = Object.entries(colStats).map(([col, s]) => {
+        const isNumeric = s.type === 'numeric';
+        const body = isNumeric ? `
+            <div class="col-stat-grid-inner">
+                <div class="mini-stat"><span>Mean</span><strong>${s.mean}</strong></div>
+                <div class="mini-stat"><span>Min</span><strong>${s.min}</strong></div>
+                <div class="mini-stat"><span>Max</span><strong>${s.max}</strong></div>
+                <div class="mini-stat"><span>Sum</span><strong>${s.sum}</strong></div>
+                <div class="mini-stat"><span>Median</span><strong>${s.median}</strong></div>
+                <div class="mini-stat"><span>Std Dev</span><strong>${s.std}</strong></div>
+            </div>` : `
+            <div class="top-vals">${(s.top_values || []).slice(0,5).map(v =>
+                `<div class="top-val-row"><span class="top-val-label">${v.value}</span><span class="top-val-count">${v.count}</span></div>`
+            ).join('')}</div>`;
+
+        return `
+        <div class="col-stat-card">
+            <div class="col-stat-header">
+                <span class="col-name">${col}</span>
+                <span class="col-type-badge col-type-${s.type}">${s.type}</span>
+            </div>
+            <div class="col-meta">
+                <span><i class="bi bi-check2-circle me-1"></i>${s.non_null} non-null</span>
+                <span><i class="bi bi-x-circle me-1"></i>${s.null_count} null</span>
+                <span><i class="bi bi-layers me-1"></i>${s.unique_count} unique</span>
+            </div>
+            ${body}
+        </div>`;
+    }).join('');
+}
+
+function renderTable() {
+    const head = document.getElementById('tableHead');
+    const body = document.getElementById('tableBody');
+    const countEl = document.getElementById('tableCount');
+
+    if (filteredData.length === 0) {
+        head.innerHTML = '';
+        body.innerHTML = '<tr><td colspan="99" class="text-center text-muted py-4">No records found</td></tr>';
+        countEl.textContent = '';
+        return;
+    }
+
+    const cols = Object.keys(filteredData[0]);
+    head.innerHTML = `<tr>${['#', ...cols].map(c => `<th>${c}</th>`).join('')}</tr>`;
+
+    const start = (currentPage - 1) * PAGE_SIZE;
+    const pageData = filteredData.slice(start, start + PAGE_SIZE);
+    body.innerHTML = pageData.map((row, i) =>
+        `<tr><td class="text-muted small">${start + i + 1}</td>${cols.map(c =>
+            `<td>${escapeHtml(String(row[c] ?? ''))}</td>`
+        ).join('')}</tr>`
+    ).join('');
+
+    countEl.textContent = `${filteredData.length} records`;
+    renderPagination();
+}
+
+function renderPagination() {
+    const totalPages = Math.ceil(filteredData.length / PAGE_SIZE);
+    const pag = document.getElementById('tablePagination');
+    if (totalPages <= 1) { pag.innerHTML = ''; return; }
+
+    let pages = '';
+    for (let i = 1; i <= Math.min(totalPages, 10); i++) {
+        pages += `<button class="page-btn ${i === currentPage ? 'active' : ''}" onclick="goPage(${i})">${i}</button>`;
+    }
+    pag.innerHTML = `
+        <button class="page-btn" onclick="goPage(${currentPage-1})" ${currentPage===1?'disabled':''}>‹</button>
+        ${pages}
+        <button class="page-btn" onclick="goPage(${currentPage+1})" ${currentPage===totalPages?'disabled':''}>›</button>
+        <span class="page-info">Page ${currentPage} of ${totalPages}</span>`;
+}
+
+function goPage(p) {
+    const totalPages = Math.ceil(filteredData.length / PAGE_SIZE);
+    if (p < 1 || p > totalPages) return;
+    currentPage = p;
+    renderTable();
+    document.getElementById('dataTable').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function escapeHtml(str) {
+    const d = document.createElement('div');
+    d.appendChild(document.createTextNode(str));
+    return d.innerHTML;
+}
+
+function showError(msg) {
+    document.getElementById('loadingOverlay').style.display = 'none';
+    const err = document.getElementById('errorState');
+    document.getElementById('errorStateMsg').textContent = msg;
+    err.classList.remove('d-none');
+}
+</script>
+{% endblock %}

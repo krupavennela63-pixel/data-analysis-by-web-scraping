@@ -1,0 +1,243 @@
+{% extends "layout.html" %}
+
+{% block title %}Select Elements{% endblock %}
+{% block page_title %}Select Elements{% endblock %}
+
+{% block content %}
+<div class="step-bar">
+    <div class="step done"><div class="step-dot"><i class="bi bi-check"></i></div><span>Fetch Page</span></div>
+    <div class="step-line done"></div>
+    <div class="step active"><div class="step-dot">2</div><span>Select Elements</span></div>
+    <div class="step-line"></div>
+    <div class="step"><div class="step-dot">3</div><span>Analyze Data</span></div>
+</div>
+
+<!-- Page Info -->
+<div class="section-card">
+    <div class="section-card-body">
+        <div class="page-info-row">
+            <div class="page-info-icon"><i class="bi bi-globe2"></i></div>
+            <div class="page-info-text">
+                <div class="page-info-title" id="pageTitle">Loading...</div>
+                <div class="page-info-url" id="pageUrl">{{ session.url }}</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Element Tabs -->
+<div class="section-card">
+    <div class="section-card-header">
+        <h4><i class="bi bi-cursor-fill me-2"></i>Available HTML Elements</h4>
+        <p>Select the elements that contain the data you want to extract. Multi-select is supported.</p>
+    </div>
+    <div class="section-card-body" id="elementsContainer">
+        <!-- Loading state -->
+        <div id="loadingState" class="loading-placeholder">
+            <div class="spinner-grow text-primary" style="width:3rem;height:3rem;"></div>
+            <p class="mt-3">Analyzing page structure...</p>
+        </div>
+    </div>
+</div>
+
+<!-- Scrape Options & Submit -->
+<div class="section-card" id="scrapeOptionsCard" style="display:none;">
+    <div class="section-card-header">
+        <h4><i class="bi bi-gear-fill me-2"></i>Scrape Options</h4>
+    </div>
+    <div class="section-card-body">
+        <div class="row g-3 align-items-end">
+            <div class="col-md-6">
+                <div class="form-check form-switch option-switch">
+                    <input class="form-check-input" type="checkbox" id="multiPageToggle" role="switch">
+                    <label class="form-check-label" for="multiPageToggle">
+                        <strong>Multi-page scraping</strong>
+                        <small>Follow pagination links automatically</small>
+                    </label>
+                </div>
+            </div>
+            <div class="col-md-3" id="maxPagesGroup" style="display:none;">
+                <label class="form-label small fw-semibold">Max Pages</label>
+                <input type="number" class="form-control" id="maxPages" value="3" min="1" max="10">
+            </div>
+            <div class="col-md-3 text-end">
+                <div class="selection-count-badge" id="selectionBadge">0 selected</div>
+            </div>
+        </div>
+
+        <div id="scrapeError" class="alert alert-danger d-none mt-3">
+            <i class="bi bi-exclamation-circle-fill me-2"></i>
+            <span id="scrapeErrorMsg"></span>
+        </div>
+
+        <div class="d-flex gap-3 mt-4">
+            <button class="btn btn-primary btn-lg flex-grow-1" id="scrapeBtn" onclick="startScrape()" disabled>
+                <span class="btn-text"><i class="bi bi-play-circle-fill me-2"></i>Extract Selected Data</span>
+                <span class="btn-loading d-none">
+                    <span class="spinner-border spinner-border-sm me-2"></span>Scraping... This may take a moment
+                </span>
+            </button>
+            <button class="btn btn-outline-secondary btn-lg" onclick="clearSelection()">
+                <i class="bi bi-x-lg me-1"></i>Clear
+            </button>
+        </div>
+    </div>
+</div>
+
+<script>
+const SESSION_ID = {{ session.id }};
+let elements = null;
+const selected = new Set();
+
+// Load elements from sessionStorage or URL params
+window.addEventListener('DOMContentLoaded', () => {
+    const stored = sessionStorage.getItem('scrapeElements');
+    if (stored) {
+        try {
+            elements = JSON.parse(stored);
+            renderElements(elements);
+        } catch(e) {
+            showLoadError('Failed to load page elements. Please go back and try again.');
+        }
+    } else {
+        showLoadError('No page data found. Please <a href="/scrape/new">start a new scrape</a>.');
+    }
+});
+
+function renderElements(data) {
+    const container = document.getElementById('elementsContainer');
+    document.getElementById('loadingState').remove();
+    document.getElementById('pageTitle').textContent = data.page_title || 'Unknown Page';
+    document.getElementById('scrapeOptionsCard').style.display = '';
+
+    let html = `<ul class="nav nav-tabs element-tabs mb-3" role="tablist">
+        <li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#tabClasses" type="button">
+            <i class="bi bi-tag-fill me-1"></i>CSS Classes <span class="badge bg-primary ms-1">${data.classes.length}</span></button></li>
+        <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tabTags" type="button">
+            <i class="bi bi-code-slash me-1"></i>HTML Tags <span class="badge bg-secondary ms-1">${data.tags.length}</span></button></li>
+        <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tabIds" type="button">
+            <i class="bi bi-hash me-1"></i>IDs <span class="badge bg-secondary ms-1">${data.ids.length}</span></button></li>
+    </ul>
+    <div class="tab-content">
+        <div class="tab-pane fade show active" id="tabClasses">
+            <div class="element-cards-grid">${renderCards(data.classes, 'class')}</div>
+        </div>
+        <div class="tab-pane fade" id="tabTags">
+            <div class="element-cards-grid">${renderCards(data.tags, 'tag')}</div>
+        </div>
+        <div class="tab-pane fade" id="tabIds">
+            <div class="element-cards-grid">${renderCards(data.ids, 'id')}</div>
+        </div>
+    </div>`;
+
+    container.innerHTML = html;
+}
+
+function renderCards(items, type) {
+    if (!items || items.length === 0) {
+        return '<p class="text-muted p-3">No items found of this type.</p>';
+    }
+    return items.map((item, idx) => {
+        const key = `${type}:${item.name}`;
+        const tag = item.tag ? `<span class="elem-tag">&lt;${item.tag}&gt;</span>` : '';
+        return `
+        <div class="element-card" id="card-${type}-${idx}" onclick="toggleSelect(this, '${type}', '${item.name.replace(/'/g, "\\'")}', '${item.name.replace(/'/g, "\\'")}')">
+            <div class="elem-header">
+                <span class="elem-type-badge elem-type-${type}">${type}</span>
+                ${tag}
+                <span class="elem-count"><i class="bi bi-layers me-1"></i>${item.count}</span>
+            </div>
+            <div class="elem-name">.${item.name}</div>
+            <div class="elem-sample">${escapeHtml(item.sample || '').substring(0, 80)}...</div>
+            <div class="elem-check"><i class="bi bi-check-circle-fill"></i></div>
+        </div>`;
+    }).join('');
+}
+
+function escapeHtml(str) {
+    const d = document.createElement('div');
+    d.appendChild(document.createTextNode(str));
+    return d.innerHTML;
+}
+
+function toggleSelect(card, type, value, label) {
+    const key = `${type}:${value}`;
+    if (selected.has(key)) {
+        selected.delete(key);
+        card.classList.remove('selected');
+    } else {
+        selected.add(key);
+        card.classList.add('selected');
+    }
+    document.getElementById('selectionBadge').textContent = `${selected.size} selected`;
+    document.getElementById('scrapeBtn').disabled = selected.size === 0;
+}
+
+function clearSelection() {
+    selected.clear();
+    document.querySelectorAll('.element-card.selected').forEach(c => c.classList.remove('selected'));
+    document.getElementById('selectionBadge').textContent = '0 selected';
+    document.getElementById('scrapeBtn').disabled = true;
+}
+
+document.getElementById('multiPageToggle').addEventListener('change', function() {
+    document.getElementById('maxPagesGroup').style.display = this.checked ? '' : 'none';
+});
+
+function startScrape() {
+    const errorDiv = document.getElementById('scrapeError');
+    const errorMsg = document.getElementById('scrapeErrorMsg');
+    errorDiv.classList.add('d-none');
+
+    if (selected.size === 0) {
+        errorMsg.textContent = 'Please select at least one element.';
+        errorDiv.classList.remove('d-none');
+        return;
+    }
+
+    const selectors = Array.from(selected).map(key => {
+        const [type, ...rest] = key.split(':');
+        const value = rest.join(':');
+        return { type, value, label: value };
+    });
+
+    const multiPage = document.getElementById('multiPageToggle').checked;
+    const maxPages = parseInt(document.getElementById('maxPages').value) || 3;
+
+    const btn = document.getElementById('scrapeBtn');
+    btn.querySelector('.btn-text').classList.add('d-none');
+    btn.querySelector('.btn-loading').classList.remove('d-none');
+    btn.disabled = true;
+
+    fetch('/api/scrape', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ session_id: SESSION_ID, selectors, multi_page: multiPage, max_pages: maxPages })
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.success) {
+            sessionStorage.setItem('scrapeResults', JSON.stringify(data));
+            window.location.href = `/scrape/results/${SESSION_ID}`;
+        } else {
+            errorMsg.textContent = data.error || 'Scraping failed.';
+            errorDiv.classList.remove('d-none');
+        }
+    })
+    .catch(() => {
+        errorMsg.textContent = 'Network error during scraping. Please try again.';
+        errorDiv.classList.remove('d-none');
+    })
+    .finally(() => {
+        btn.querySelector('.btn-text').classList.remove('d-none');
+        btn.querySelector('.btn-loading').classList.add('d-none');
+        btn.disabled = selected.size === 0;
+    });
+}
+
+function showLoadError(msg) {
+    document.getElementById('loadingState').innerHTML = `
+        <div class="alert alert-warning"><i class="bi bi-exclamation-triangle-fill me-2"></i>${msg}</div>`;
+}
+</script>
+{% endblock %}

@@ -1,0 +1,214 @@
+{% extends "layout.html" %}
+
+{% block title %}Dashboard{% endblock %}
+{% block page_title %}Dashboard{% endblock %}
+
+{% block content %}
+<!-- Welcome Banner -->
+<div class="welcome-banner">
+    <div class="welcome-content">
+        <h2>Good {% if current_user.name %}{{ "morning" if now.hour < 12 else ("afternoon" if now.hour < 17 else "evening") }}, {{ current_user.name.split()[0] }}! 👋{% endif %}</h2>
+        <p>Ready to extract some data? Enter a URL below to get started.</p>
+    </div>
+    <div class="welcome-illustration">
+        <i class="bi bi-graph-up-arrow"></i>
+    </div>
+</div>
+
+<!-- Stats Cards -->
+<div class="stats-grid">
+    <div class="stat-card">
+        <div class="stat-icon" style="--color: #6366f1;">
+            <i class="bi bi-collection-fill"></i>
+        </div>
+        <div class="stat-content">
+            <h3>{{ stats.total_sessions }}</h3>
+            <p>Total Sessions</p>
+        </div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-icon" style="--color: #22c55e;">
+            <i class="bi bi-check-circle-fill"></i>
+        </div>
+        <div class="stat-content">
+            <h3>{{ stats.successful_sessions }}</h3>
+            <p>Successful</p>
+        </div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-icon" style="--color: #f59e0b;">
+            <i class="bi bi-database-fill"></i>
+        </div>
+        <div class="stat-content">
+            <h3>{{ stats.total_records }}</h3>
+            <p>Records Scraped</p>
+        </div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-icon" style="--color: #ec4899;">
+            <i class="bi bi-calendar3"></i>
+        </div>
+        <div class="stat-content">
+            <h3>{{ current_user.created_at.strftime('%b %Y') }}</h3>
+            <p>Member Since</p>
+        </div>
+    </div>
+</div>
+
+<!-- URL Input Section -->
+<div class="section-card">
+    <div class="section-card-header">
+        <h4><i class="bi bi-link-45deg me-2"></i>Start New Scrape</h4>
+        <p>Enter any public website URL to extract and analyze its data</p>
+    </div>
+    <div class="section-card-body">
+        <div class="url-input-group">
+            <div class="url-input-wrapper">
+                <i class="bi bi-globe2 url-icon"></i>
+                <input type="url" id="urlInput" class="form-control url-input"
+                       placeholder="https://example.com/products"
+                       autocomplete="off" spellcheck="false">
+            </div>
+            <button class="btn btn-primary btn-fetch" id="fetchBtn" onclick="fetchPage()">
+                <span class="btn-text"><i class="bi bi-search me-2"></i>Analyze Page</span>
+                <span class="btn-loading d-none">
+                    <span class="spinner-border spinner-border-sm me-2"></span>Fetching...
+                </span>
+            </button>
+        </div>
+        <div class="url-hints">
+            <span class="hint-label"><i class="bi bi-lightbulb me-1"></i>Try:</span>
+            <button class="hint-chip" onclick="setUrl('https://books.toscrape.com')">books.toscrape.com</button>
+            <button class="hint-chip" onclick="setUrl('https://quotes.toscrape.com')">quotes.toscrape.com</button>
+            <button class="hint-chip" onclick="setUrl('https://toscrape.com')">toscrape.com</button>
+        </div>
+        <div id="fetchError" class="alert alert-danger d-none mt-3">
+            <i class="bi bi-exclamation-circle-fill me-2"></i>
+            <span id="fetchErrorMsg"></span>
+        </div>
+    </div>
+</div>
+
+<!-- Recent Sessions -->
+{% if recent_sessions %}
+<div class="section-card">
+    <div class="section-card-header">
+        <h4><i class="bi bi-clock-history me-2"></i>Recent Sessions</h4>
+        <a href="{{ url_for('main.history') }}" class="btn btn-sm btn-outline-secondary">View All</a>
+    </div>
+    <div class="section-card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover session-table">
+                <thead>
+                    <tr>
+                        <th>Website</th>
+                        <th>Status</th>
+                        <th>Records</th>
+                        <th>Date</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                {% for s in recent_sessions %}
+                <tr>
+                    <td>
+                        <div class="session-url">
+                            <i class="bi bi-globe2 me-2 text-muted"></i>
+                            <span title="{{ s.url }}">{{ s.title or s.url[:40] }}</span>
+                        </div>
+                    </td>
+                    <td>
+                        <span class="status-badge status-{{ s.status }}">
+                            {{ s.status.replace('_', ' ').title() }}
+                        </span>
+                    </td>
+                    <td><strong>{{ s.record_count or '—' }}</strong></td>
+                    <td class="text-muted small">{{ s.created_at.strftime('%d %b, %H:%M') }}</td>
+                    <td>
+                        {% if s.status == 'completed' %}
+                        <a href="{{ url_for('scraper.results', session_id=s.id) }}" class="btn btn-sm btn-outline-primary">
+                            <i class="bi bi-eye me-1"></i>View
+                        </a>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% else %}
+<div class="empty-state">
+    <div class="empty-icon"><i class="bi bi-spider"></i></div>
+    <h5>No scrapes yet</h5>
+    <p>Enter a URL above to start your first scraping session</p>
+</div>
+{% endif %}
+
+<script>
+function setUrl(url) {
+    document.getElementById('urlInput').value = url;
+    document.getElementById('urlInput').focus();
+}
+
+function fetchPage() {
+    const url = document.getElementById('urlInput').value.trim();
+    const errorDiv = document.getElementById('fetchError');
+    const errorMsg = document.getElementById('fetchErrorMsg');
+    const btn = document.getElementById('fetchBtn');
+
+    errorDiv.classList.add('d-none');
+
+    if (!url) {
+        errorMsg.textContent = 'Please enter a website URL.';
+        errorDiv.classList.remove('d-none');
+        return;
+    }
+
+    // UI: loading state
+    btn.querySelector('.btn-text').classList.add('d-none');
+    btn.querySelector('.btn-loading').classList.remove('d-none');
+    btn.disabled = true;
+
+    fetch('/api/fetch-page', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrf() },
+        body: JSON.stringify({ url: url })
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.success) {
+            // Redirect to element selection
+            const params = new URLSearchParams({
+                session_id: data.session_id,
+                elements: JSON.stringify(data.elements)
+            });
+            window.location.href = '/scrape/select-elements?' + params.toString();
+        } else {
+            errorMsg.textContent = data.error || 'Failed to fetch the page.';
+            errorDiv.classList.remove('d-none');
+        }
+    })
+    .catch(err => {
+        errorMsg.textContent = 'Network error. Please try again.';
+        errorDiv.classList.remove('d-none');
+    })
+    .finally(() => {
+        btn.querySelector('.btn-text').classList.remove('d-none');
+        btn.querySelector('.btn-loading').classList.add('d-none');
+        btn.disabled = false;
+    });
+}
+
+function getCsrf() {
+    const meta = document.querySelector('meta[name="csrf-token"]');
+    return meta ? meta.content : '';
+}
+
+// Allow Enter key on URL input
+document.getElementById('urlInput').addEventListener('keypress', function(e) {
+    if (e.key === 'Enter') fetchPage();
+});
+</script>
+{% endblock %}

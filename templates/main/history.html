@@ -1,0 +1,103 @@
+{% extends "layout.html" %}
+
+{% block title %}Scrape History{% endblock %}
+{% block page_title %}Scrape History{% endblock %}
+
+{% block content %}
+<div class="section-card">
+    <div class="section-card-header">
+        <h4><i class="bi bi-clock-history me-2"></i>All Scraping Sessions</h4>
+        <a href="{{ url_for('scraper.new_scrape') }}" class="btn btn-primary btn-sm">
+            <i class="bi bi-plus-lg me-1"></i>New Scrape
+        </a>
+    </div>
+    <div class="section-card-body p-0">
+        {% if sessions %}
+        <div class="table-responsive">
+            <table class="table table-hover session-table" id="historyTable">
+                <thead>
+                    <tr>
+                        <th>#</th>
+                        <th>Website</th>
+                        <th>URL</th>
+                        <th>Status</th>
+                        <th>Records</th>
+                        <th>Date</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                {% for s in sessions %}
+                <tr>
+                    <td class="text-muted">{{ loop.index }}</td>
+                    <td>
+                        <strong>{{ s.title or 'Unknown' }}</strong>
+                    </td>
+                    <td>
+                        <a href="{{ s.url }}" target="_blank" rel="noopener noreferrer" class="url-link text-truncate d-inline-block" style="max-width:220px;" title="{{ s.url }}">
+                            {{ s.url[:50] }}{% if s.url|length > 50 %}...{% endif %}
+                        </a>
+                    </td>
+                    <td>
+                        <span class="status-badge status-{{ s.status }}">
+                            {% if s.status == 'completed' %}<i class="bi bi-check-circle-fill me-1"></i>{% elif s.status == 'failed' %}<i class="bi bi-x-circle-fill me-1"></i>{% else %}<i class="bi bi-hourglass-split me-1"></i>{% endif %}
+                            {{ s.status.replace('_', ' ').title() }}
+                        </span>
+                    </td>
+                    <td>
+                        {% if s.record_count %}<strong>{{ s.record_count }}</strong>{% else %}<span class="text-muted">—</span>{% endif %}
+                    </td>
+                    <td class="text-muted small">{{ s.created_at.strftime('%d %b %Y, %H:%M') }}</td>
+                    <td>
+                        <div class="d-flex gap-1">
+                            {% if s.status == 'completed' %}
+                            <a href="{{ url_for('scraper.results', session_id=s.id) }}" class="btn btn-sm btn-outline-primary" title="View Results">
+                                <i class="bi bi-eye"></i>
+                            </a>
+                            <a href="/api/download/{{ s.id }}/csv" class="btn btn-sm btn-outline-success" title="Download CSV">
+                                <i class="bi bi-filetype-csv"></i>
+                            </a>
+                            <a href="/api/download/{{ s.id }}/excel" class="btn btn-sm btn-outline-success" title="Download Excel">
+                                <i class="bi bi-file-earmark-excel"></i>
+                            </a>
+                            {% endif %}
+                            <button class="btn btn-sm btn-outline-danger" onclick="deleteSession({{ s.id }}, this)" title="Delete">
+                                <i class="bi bi-trash"></i>
+                            </button>
+                        </div>
+                    </td>
+                </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="empty-state p-5">
+            <div class="empty-icon"><i class="bi bi-clock-history"></i></div>
+            <h5>No sessions yet</h5>
+            <p>Your scraping history will appear here</p>
+            <a href="{{ url_for('scraper.new_scrape') }}" class="btn btn-primary mt-2">
+                <i class="bi bi-plus-lg me-1"></i>Start Scraping
+            </a>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<script>
+function deleteSession(id, btn) {
+    if (!confirm('Delete this session and all its data?')) return;
+    fetch(`/api/session/${id}/delete`, {
+        method: 'DELETE',
+        headers: { 'X-CSRFToken': document.querySelector('input[name="csrf_token"]') ? document.querySelector('input[name="csrf_token"]').value : '' }
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.success) {
+            btn.closest('tr').remove();
+        }
+    })
+    .catch(() => alert('Failed to delete session.'));
+}
+</script>
+{% endblock %}

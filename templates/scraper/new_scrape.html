@@ -1,0 +1,118 @@
+{% extends "layout.html" %}
+
+{% block title %}New Scrape{% endblock %}
+{% block page_title %}New Scrape{% endblock %}
+
+{% block content %}
+<div class="section-card">
+    <div class="section-card-header">
+        <h4><i class="bi bi-globe2 me-2"></i>Enter Website URL</h4>
+        <p>Enter the URL of any public website you want to scrape. We'll analyze the page structure for you.</p>
+    </div>
+    <div class="section-card-body">
+        <div class="url-input-group">
+            <div class="url-input-wrapper">
+                <i class="bi bi-link-45deg url-icon"></i>
+                <input type="url" id="urlInput" class="form-control url-input"
+                       placeholder="https://example.com/data"
+                       autocomplete="off" spellcheck="false" autofocus>
+            </div>
+            <button class="btn btn-primary btn-fetch" id="fetchBtn" onclick="fetchPage()">
+                <span class="btn-text"><i class="bi bi-search me-2"></i>Analyze Page</span>
+                <span class="btn-loading d-none">
+                    <span class="spinner-border spinner-border-sm me-2"></span>Fetching...
+                </span>
+            </button>
+        </div>
+
+        <div class="url-hints mt-3">
+            <span class="hint-label"><i class="bi bi-lightbulb me-1"></i>Scraping-friendly test sites:</span>
+            <button class="hint-chip" onclick="setUrl('https://books.toscrape.com')">books.toscrape.com</button>
+            <button class="hint-chip" onclick="setUrl('https://quotes.toscrape.com')">quotes.toscrape.com</button>
+            <button class="hint-chip" onclick="setUrl('https://books.toscrape.com/catalogue/category/books/mystery_3/index.html')">Mystery Books</button>
+        </div>
+
+        <div id="fetchError" class="alert alert-danger d-none mt-3">
+            <i class="bi bi-exclamation-circle-fill me-2"></i>
+            <span id="fetchErrorMsg"></span>
+        </div>
+    </div>
+</div>
+
+<!-- Info Cards -->
+<div class="info-cards-grid">
+    <div class="info-card">
+        <div class="info-icon"><i class="bi bi-shield-check"></i></div>
+        <h6>Safe & Ethical</h6>
+        <p>We validate URLs, check robots.txt, and respect rate limits.</p>
+    </div>
+    <div class="info-card">
+        <div class="info-icon"><i class="bi bi-sliders"></i></div>
+        <h6>Customizable</h6>
+        <p>Select exactly which HTML elements to extract from any page.</p>
+    </div>
+    <div class="info-card">
+        <div class="info-icon"><i class="bi bi-graph-up-arrow"></i></div>
+        <h6>Smart Analysis</h6>
+        <p>Auto-cleaned data with stats, charts, and export options.</p>
+    </div>
+</div>
+
+<script>
+function setUrl(url) {
+    document.getElementById('urlInput').value = url;
+    document.getElementById('urlInput').focus();
+}
+
+function fetchPage() {
+    const url = document.getElementById('urlInput').value.trim();
+    const errorDiv = document.getElementById('fetchError');
+    const errorMsg = document.getElementById('fetchErrorMsg');
+    const btn = document.getElementById('fetchBtn');
+
+    errorDiv.classList.add('d-none');
+
+    if (!url) {
+        errorMsg.textContent = 'Please enter a website URL.';
+        errorDiv.classList.remove('d-none');
+        return;
+    }
+
+    btn.querySelector('.btn-text').classList.add('d-none');
+    btn.querySelector('.btn-loading').classList.remove('d-none');
+    btn.disabled = true;
+
+    fetch('/api/fetch-page', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: url })
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.success) {
+            sessionStorage.setItem('scrapeElements', JSON.stringify(data.elements));
+            sessionStorage.setItem('scrapeSessionId', data.session_id);
+            sessionStorage.setItem('scrapeUrl', data.url);
+            const params = new URLSearchParams({ session_id: data.session_id });
+            window.location.href = '/scrape/select-elements?' + params.toString();
+        } else {
+            errorMsg.textContent = data.error || 'Failed to fetch the page.';
+            errorDiv.classList.remove('d-none');
+        }
+    })
+    .catch(() => {
+        errorMsg.textContent = 'Network error. Please check your connection and try again.';
+        errorDiv.classList.remove('d-none');
+    })
+    .finally(() => {
+        btn.querySelector('.btn-text').classList.remove('d-none');
+        btn.querySelector('.btn-loading').classList.add('d-none');
+        btn.disabled = false;
+    });
+}
+
+document.getElementById('urlInput').addEventListener('keypress', e => {
+    if (e.key === 'Enter') fetchPage();
+});
+</script>
+{% endblock %}
