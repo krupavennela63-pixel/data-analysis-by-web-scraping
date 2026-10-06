@@ -12,9 +12,12 @@ def create_app():
     app = Flask(__name__, template_folder='../templates', static_folder='../static')
 
     app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'dev-secret-key-change-in-production')
-    app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///' + os.path.join(
-        os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'instance', 'scraper.db'
-    )
+    if os.environ.get('VERCEL'):
+        db_path = '/tmp/scraper.db'
+    else:
+        db_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'instance', 'scraper.db')
+
+    app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///' + db_path
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
     app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024
 
@@ -45,7 +48,8 @@ def create_app():
         return {'now': datetime.utcnow()}
 
     with app.app_context():
-        os.makedirs(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'instance'), exist_ok=True)
+        if not os.environ.get('VERCEL'):
+            os.makedirs(os.path.dirname(db_path), exist_ok=True)
         db.create_all()
 
     return app
